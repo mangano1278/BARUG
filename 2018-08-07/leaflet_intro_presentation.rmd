@@ -1,0 +1,238 @@
+---
+title: "BARUG 8-7-2018"
+output: 
+  ioslides_presentation: 
+    fig_height: 6
+    fig_width: 10
+    widescreen: yes
+---
+
+```{r setup, include=FALSE,echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE,include=FALSE}
+library(leaflet)
+library(rgdal)
+library(rgeos)
+library(tidyverse)
+library(randomcoloR)
+library(htmlwidgets)
+library(ggmap)
+```
+
+
+#Andrew Mangano
+- Albertsons Companies (parent company of Safeway)  
+- eCommerce Director of Analytics  
+
+
+An Introduction to Maps in R using Leaflet  
+(and other useful packages)  
+
+
+- BARUG August 7th, 2018
+
+
+#Geospatial analytics can connect more people to your work   
+- Maps are a useful tool to share analytical work.   
+- Spatial maps can add more dimension to other analysis.
+- Interactive maps let users engage with data on their own terms providing more connection.  
+
+  
+##Tableau is perhaps best know for it's map visualizations
+While overused, they are impressive and engaging to many users.  
+They also perform well.  
+  
+##But Tableau has many issues!  
+- Expensive: licensing and server costs to really use Tableau  
+- Rigid: static features and limited prescribed visualizations  
+- Heavy: Requires administrative work and training for use   
+  
+#R solves many of these problems!  
+- The R community has responded with impressive geospatial analytical packages  
+- Constant development improvement  
+- Flexibility in visualizations and in distribution  
+  
+This presentation is a simple intro of producing interactive maps in R 
+that can be shared with non R users.  
+
+##A few of the packages used in the demo:  
+- leaflet  
+- htmlwidgets 
+- ggmap  
+
+- randomcoloR  
+
+- rgdal  
+- rgeos  
+
+#An example of where we are going:
+
+
+#But first: Pizza!
+
+##You don't need your own proprietary data
+
+##ggmap
+```{r,message=FALSE,echo=TRUE}
+blue_line_pizza<-geocode("blue line pizza")
+vera_pizza<-geocode("vera pizza napoletana san jose")
+best_pizza<-geocode("best pizza in silicon valley")
+```
+- Now build the map, layer by layer
+
+##leaflet
+```{r,echo=TRUE}
+p<-leaflet() %>%  
+  addProviderTiles(providers$CartoDB.Positron)
+```
+##
+```{r}
+p
+```
+
+
+##Add layers
+```{r,echo=TRUE}
+p<-p%>%addCircleMarkers(lat = blue_line_pizza$lat, lng = blue_line_pizza$lon,  
+                        radius = 6,  color = "blue",  
+                        label = as.character("BLUE LINE PIZZA!"),  
+                        fillOpacity = .5)  
+
+p<-p%>%addCircleMarkers(lat = vera_pizza$lat,lng = vera_pizza$lon,  
+                        radius = 6, color = "red",  
+                        label = as.character("Vera Pizza"),  
+                        fillOpacity = .5)  
+
+p<-p%>%addCircleMarkers(lat = best_pizza$lat,lng = best_pizza$lon,  
+                        radius = 6, color = "purple",  
+                        label = as.character("The Best Pizza in Silicon Valley"),  
+                        fillOpacity = .5)
+```
+##
+```{r}
+p
+```
+
+
+##Add a legend
+```{r,echo=TRUE}
+p<-p%>%addLegend(color = c("blue","red","purple"),  
+                 labels = c("Blue Line Pizza","Vera Pizza","The Best Pizza in Silicon Valley"),    
+                 opacity = 1,  
+                 position="bottomright")
+```
+##
+```{r}
+p
+```
+
+
+##Extract address data for analysis
+```{r,warning=FALSE,echo=TRUE,message=FALSE}
+blue_zip<-revgeocode(as.numeric(blue_line_pizza),output="more")$postal_code%>%as.character()
+vera_zip<-revgeocode(as.numeric(vera_pizza),output="more")$postal_code%>%as.character()
+best_zip<-revgeocode(as.numeric(best_pizza),output="more")$postal_code%>%as.character()
+```
+
+#Polygon boundaries for additional layers to an analysis
+Census Bureau shape file for polygon boundaries  
+https://catalog.data.gov/dataset/tiger-line-shapefile-2015-2010-nation-u-s-2010-census-5-digit-zip-code-tabulation-area-zcta5-na
+
+##Using the rgdal rgeos and geospatial analytics packages, prepare zip code polygons
+```{r,warning=FALSE,echo=TRUE,message=FALSE}
+dat<-readOGR('C:/Documents/census/zip','tl_2015_us_zcta510')
+subdat<-dat[which(dat$GEOID10 %in% c(blue_zip,vera_zip,best_zip)),]
+subdat<-spTransform(subdat, CRS("+init=epsg:4326")) 
+subdat_data<-subdat@data[,c("GEOID10", "ALAND10")]
+subdat<-gSimplify(subdat,tol=0, topologyPreserve=TRUE)
+subdat<-SpatialPolygonsDataFrame(subdat, data=subdat_data)
+```
+##
+```{r,warning=FALSE,echo=TRUE,message=FALSE}
+p<-leaflet() %>%  
+  addProviderTiles(providers$CartoDB.Positron) %>%  
+  addPolygons(data=subdat,fillOpacity=.5,opacity=.2,weight=.2,smoothFactor = 0.5)
+```
+##
+```{r,warning=FALSE}
+p
+```
+
+##
+```{r,echo=TRUE,warning=FALSE,message=FALSE}
+pizza_frame<-data.frame(zip=c(blue_zip,vera_zip,best_zip),   
+                        desc=c("Blue Line Pizza","Vera Pizza","The Best?"),  
+                        lat = c(blue_line_pizza$lat,vera_pizza$lat,best_pizza$lat),  
+                        lon = c(blue_line_pizza$lon,vera_pizza$lon,best_pizza$lon),
+                        rating = c("Delicious","Tasty","Who knows?"))  
+  
+
+pizza_frame$color<-randomColor(count = nrow(pizza_frame),luminosity="bright")
+```
+
+```{r,echo=TRUE,warning=FALSE,message=FALSE}
+subdat<-dat[which(dat$GEOID10 %in% pizza_frame$zip),]  
+subdat<-spTransform(subdat, CRS("+init=epsg:4326"))  
+subdat_data<-subdat@data[,c("GEOID10", "ALAND10")]  
+
+preserve_names<-row.names(subdat_data)
+subdat_data<-left_join(subdat_data,pizza_frame,by=c("GEOID10"="zip"))  
+row.names(subdat_data)<-preserve_names  
+
+subdat<-gSimplify(subdat,tol=0, topologyPreserve=TRUE)  
+subdat<-SpatialPolygonsDataFrame(subdat, data=subdat_data)  
+```
+
+##
+```{r,echo=TRUE}
+p<-leaflet() %>%  
+  addProviderTiles(providers$CartoDB.Positron) %>%  
+  addProviderTiles(providers$CartoDB.Positron) %>%  
+  addPolygons(data=subdat,color=subdat_data$color,  
+              fillOpacity=.5,opacity=.2,weight=.2,smoothFactor = 0.5,  
+              popup = subdat_data$desc)
+for(i in 1:nrow(pizza_frame)){
+  p<-p%>%addCircleMarkers(lat = subdat_data$lat[i],  
+                        lng=subdat_data$lon[i],  
+                        radius=2,
+                        color=subdat_data$color[i],  
+                        fillColor = "black",  
+                        label=subdat_data$desc[i],  
+                        fillOpacity=.5)}
+p<-p%>%addLegend(color = subdat_data$color,  
+                 labels = subdat_data$desc,    
+                 opacity = 1,  
+                 position="topright")
+```
+
+##Add text labels
+```{r,echo=TRUE}
+p<-p%>% addLabelOnlyMarkers(lat = subdat_data$lat, lng=subdat_data$lon,label = subdat_data$rating, labelOptions = labelOptions(noHide = T, direction = 'top', textOnly = T,textsize="14px"))
+```
+
+##
+```{r}
+p
+```
+
+
+#Distribute!
+The htmlwidgets package allows you to save your output to a contained html file.  
+
+- html files can be shared or hosted for portability
+- does not require a user to have R
+- does not require special software
+- large visualizations include helper files folder
+
+
+```{r}
+saveWidget(p, file="C:/Documents/BARUG/PIZZA.html")
+```
+
+##For more info:
+https://rstudio.github.io/leaflet/
+
+
